@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Consul1 by wangfakang</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <script src="javascripts/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1 class="header">Consul1</h1>
+        <p class="header">consul discover  service</p>
+
+        <ul>
+          <li class="download"><a class="buttons" href="https://github.com/wangfakang/consul1/zipball/master">Download ZIP</a></li>
+          <li class="download"><a class="buttons" href="https://github.com/wangfakang/consul1/tarball/master">Download TAR</a></li>
+          <li><a class="buttons github" href="https://github.com/wangfakang/consul1">View On GitHub</a></li>
+        </ul>
+
+        <p class="header">This project is maintained by <a class="header name" href="https://github.com/wangfakang">wangfakang</a></p>
+
+
+      </header>
+      <section>
+        <p><code>consul集群搭建和服务发现：
+</code></p>
+
+<p>consul做服务发现的列子:<br>
+由于机器资源有限,使用的docker进行搭建的consul集群.<br>
+启动三个docker,然后执行consul:    </p>
+
+<h1>
+<a id="一consul集群搭建---" class="anchor" href="#%E4%B8%80consul%E9%9B%86%E7%BE%A4%E6%90%AD%E5%BB%BA---" aria-hidden="true"><span class="octicon octicon-link"></span></a>一.consul集群搭建   </h1>
+
+<pre><code>下面我们搭建三个consul的集群:     
+ docker1:     
+  consul agent -server -bootstrap-expect 2 -data-dir /tmp/consul -node=n1 -bind=10.209.70.221 -dc=dc1     
+
+docker2:    
+ consul agent -server -bootstrap-expect 2 -data-dir /tmp/consul -node=n2 -bind=10.209.70.222 -dc=dc1    
+
+docker3:        
+  consul agent  -data-dir /tmp/consul -node=n3 -bind=10.209.70.223 -dc=dc1     
+ 上述就简单的启动了三个consul agent,前面两个是以server模式运行的,最后是以client方式运行的.     
+
+ 现在在任意一台机器上执行consul  members  只会有自己的相关信息,此时他们彼此还是独立的.     
+
+
+此时还要在docker1上执行consul  join 10.209.70.222 此时就把docker1上的consul加入到了docker中形成了一个简单的集群.   
+此时在执行docker1上consul  members 就会看到docker上的consul信息.当然在这个时候就会出现选举的流程.        
+
+最后在docker3上的consul执行consul join 10.209.70.222 然后在任意一台docker上执行consul members就会看到其他两docker上的consul信息了.         
+
+到这里就简单的搭建了一个consul集群.          
+</code></pre>
+
+<h1>
+<a id="二服务注册" class="anchor" href="#%E4%BA%8C%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C" aria-hidden="true"><span class="octicon octicon-link"></span></a>二.服务注册</h1>
+
+<pre><code> consul进行服务注册提供了两种方式(http api以及配置文件指定),在这里我们使用配置文件的方式:     
+分二步:       
+ 1.在/etc/consuld/下建立一个service.json写入下面内容:        
+{"service": {"name": "web", "tags": ["master"], "port": 80,    
+"check": {"http": "http://127.0.0.1:80", "interval": "10s"}}}   
+
+上面的含义是:注册了一个服务名称是web,然后写上相应的ip及port,并且增加了一个健康检查check.        
+
+2.进行启动consul指定-config-dir         
+consul agent -data-dir /tmp/consul -node=n1 -bind=10.209.70.221 -dc=dc1 -config-dir=/etc/consuld/        
+
+注意此时consul会不断的进行报错,因为有进行了健康检查,此时我在docker1上启动了一个nginx服务端口是80,就会停止报错.         
+
+(热注册)技巧:       
+ 如果在启动过后进行服务注册,在相应的配置文件下写好要注册的内容,然后给agent发送一个SIGHUP信号即可，这样允许你在升级服务时，而不会产生agent宕机时间或者服务不可达.或者通过HTTP API接口来动态的增加、删除、修改服务.
+</code></pre>
+
+<h1>
+<a id="三服务发现------" class="anchor" href="#%E4%B8%89%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0------" aria-hidden="true"><span class="octicon octicon-link"></span></a>三.服务发现      </h1>
+
+<pre><code>在二服务注册的基础上,在注册一个服务(在docke2上注册同样的服务),测试在docker3上执行:    
+
+服务发现也有两种方式:http api和dns方式:    
+此时我们在docker1上的consul执行:
+ dig @127.0.0.1 -p 8600 web.service.consul SRV  此时会看到另外两个docker下的web服务,SRV主要是查看port.
+
+此时如果把docker2上的web服务nginx给stop调此时在执行:    
+ dig @127.0.0.1 -p 8600 web.service.consul SRV  这时就没有docker2上的web服务了.    
+
+
+注意:     
+ http api和dns方式查询服务的最大区别就是dns方式可以根据服务check的实时状态动态调整available服务节点列表.   
+</code></pre>
+
+<h2>
+<a id="有问题反馈" class="anchor" href="#%E6%9C%89%E9%97%AE%E9%A2%98%E5%8F%8D%E9%A6%88" aria-hidden="true"><span class="octicon octicon-link"></span></a>有问题反馈</h2>
+
+<p>在使用中有任何问题，欢迎反馈给我，可以用以下联系方式跟我交流</p>
+
+<ul>
+<li>邮件(1031379296#qq.com, 把#换成@)</li>
+<li>QQ: 1031379296</li>
+<li>weibo: <a href="http://weibo.com/u/2786211992/home">@王发康</a>
+</li>
+</ul>
+
+<h2>
+<a id="感激" class="anchor" href="#%E6%84%9F%E6%BF%80" aria-hidden="true"><span class="octicon octicon-link"></span></a>感激</h2>
+
+<h3>
+<a id="chunshengsteratgmailcom" class="anchor" href="#chunshengsteratgmailcom" aria-hidden="true"><span class="octicon octicon-link"></span></a>chunshengsterATgmail.com</h3>
+
+<h2>
+<a id="关于作者" class="anchor" href="#%E5%85%B3%E4%BA%8E%E4%BD%9C%E8%80%85" aria-hidden="true"><span class="octicon octicon-link"></span></a>关于作者</h2>
+
+<h3>
+<a id="linuxnginxgolangcc爱好者" class="anchor" href="#linuxnginxgolangcc%E7%88%B1%E5%A5%BD%E8%80%85" aria-hidden="true"><span class="octicon octicon-link"></span></a>Linux\nginx\golang\c\c++爱好者</h3>
+
+<h3>
+<a id="欢迎一起交流--一起学习" class="anchor" href="#%E6%AC%A2%E8%BF%8E%E4%B8%80%E8%B5%B7%E4%BA%A4%E6%B5%81--%E4%B8%80%E8%B5%B7%E5%AD%A6%E4%B9%A0" aria-hidden="true"><span class="octicon octicon-link"></span></a>欢迎一起交流  一起学习#</h3>
+      </section>
+      <footer>
+        <p><small>Hosted on <a href="https://pages.github.com">GitHub Pages</a> using the Dinky theme</small></p>
+      </footer>
+    </div>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+		          <script type="text/javascript">
+            var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+            document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+          </script>
+          <script type="text/javascript">
+            try {
+              var pageTracker = _gat._getTracker("consul  discover service");
+            pageTracker._trackPageview();
+            } catch(err) {}
+          </script>
+
+  </body>
+</html>
